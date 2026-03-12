@@ -1,54 +1,74 @@
+import "dotenv/config"
 import createHttpError from 'http-errors'
-import identityKeyCheck from '../utils/identity.util.js'
 import { prisma } from '../lib/prisma.js'
 import bcrypt from 'bcrypt'
+import { loginSchema, registerSchema } from '../validations/schema.js'
+import jwt from 'jsonwebtoken'
+import { createUser, getUserBy } from "../services/user.service.js"
+
 
 export async function register(req, res, next) {
-  const { identity, firstName, lastName, password, confirmPassword } = req.body
   // validation 
-  if (!identity.trim() || !firstName.trim() || !lastName.trim() || !password.trim() || !confirmPassword.trim()) {
-    return next(createHttpError[400]('fill all inputs'))
-  }
-  if (confirmPassword !== password) {
-    return next(createHttpError[400]('check confirm-password'))
-  }
-  // check 
-  const identityKey = identityKeyCheck(identity)
-  if (!identityKey) {
-    return next(createHttpError[400]('identity must be email or phone number'))
-  }
+  const data = await registerSchema.parseAsync(req.body)
+
+  // check identity is email or mobile
+  const identityKey = data.email ? 'email' : 'mobile'
 
   // find user for non-duplicate
-  const foundUser = await prisma.user.findUnique({
-    where: { [identityKey]: identity }
-  })
+  const foundUser = await getUserBy(identityKey, data[identityKey])
   if (foundUser) {
     return next(createHttpError[409]('This user already register'))
   }
 
   // create new users
-  const newUser = {
-    [identityKey]: identity,
-    password: await bcrypt.hash(password, 5),
-    firstName,
-    lastName
+
+  const createdUser = await createUser(data)
+
+  const userInfo = {
+    id: createdUser.id,
+    [identityKey]: data.identity,
+    firstName: createdUser.firstName,
+    lastName: createdUser.lastName
   }
 
-  const createdUser = await prisma.user.create({
-    data: newUser
-  })
-
-  console.log(createdUser)
-  
+  // console.log(createdUser)
   res.json({
-    message : 'Register Success',
-    user : createdUser
+    message: 'Register Success',
+    user: userInfo
   })
 }
 
 
-export function login(req, res, next) {
-  res.send('login controller')
+export async function login(req, res, next) {
+  const data = loginSchema.parse(req.body)
+  const identityKey = data.email ? 'email' : 'mobile'
+  // find User
+  const foundUser = await prisma.user.findFirst({
+    where: { [identityKey]: data[identityKey] }
+  })
+  if (!foundUser) {
+    return next(createHttpError[401]('Invalid Login 1'))
+  }
+  // check Password
+  const checkPassword = await bcrypt.compare(data.password, foundUser.password)
+  if (!checkPassword) {
+    return next(createHttpError[401]('Invalid login 2'))
+  }
+
+  // create token
+  const payload = { id: foundUser.id }
+  const token = jwt.sign(payload, process.env.JWT_SECRET, {
+    algorithm: "HS256",
+    expiresIn: "7d"
+  })
+  // 
+  const { password, createdAt, updatedAt, ...userInfo } = foundUser
+
+  res.json({
+    message: "login done",
+    token: token,
+    user: userInfo
+  })
 }
 export function getMe(req, res, next) {
   res.send('getMe controller')
