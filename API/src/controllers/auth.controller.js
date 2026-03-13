@@ -70,6 +70,7 @@ export async function login(req, res, next) {
     user: userInfo
   })
 }
+
 export function getMe(req, res, next) {
-  res.send('getMe controller')
+  res.json({ user: req.user })
 }

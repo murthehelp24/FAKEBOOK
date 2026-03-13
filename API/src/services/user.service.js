@@ -11,4 +11,4 @@ export async function createUser(data) {
   return await prisma.user.create({ data: data })
 }
 
-getUserBy('id', 1).then(console.log)
+// getUserBy('id', 1).then(console.log)
